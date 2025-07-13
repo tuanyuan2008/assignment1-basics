@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import os
 from typing import IO, Any, BinaryIO
+from collections import Counter
 from collections.abc import Iterable
+# from multiprocessing import Pool
 from jaxtyping import Float, Int
 
 import numpy.typing as npt
 import torch
 from torch import Tensor
-
-
+import regex as re  # type: ignore
+from cs336_basics.bpe_helper import find_chunk_boundaries, pretokenize, compute_bpe_merge
 
 def run_linear(
     d_in: int,
@@ -588,4 +590,51 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    vocab: Counter[tuple[bytes, ...]] = Counter()
+
+    num_chunks = 1000
+    with open(input_path, "rb") as f:
+        boundaries = find_chunk_boundaries(
+            f, num_chunks, "<|endoftext|>".encode("utf-8")
+        )
+
+    chunks = []
+    with open(input_path, "rb") as f:
+        for start, end in zip(boundaries[:-1], boundaries[1:]):
+            f.seek(start)
+            chunk = f.read(end - start).decode("utf-8", errors="ignore")
+            sub_chunks = re.split(re.escape("|".join(special_tokens)), chunk)
+            chunks.extend([sub_chunk for sub_chunk in sub_chunks if sub_chunk.strip()])
+
+    # cpu_count = os.cpu_count()
+    # num_processes = (cpu_count - 1) if cpu_count else 8
+    # with Pool(processes=num_processes) as pool:
+    #     results = pool.map(pretokenize, chunks, chunksize=len(chunks) // num_processes)
+
+    results = []
+    for chunk in chunks:
+        result = pretokenize(chunk)
+        results.append(result)
+
+    for local_vocab in results:
+        vocab.update(local_vocab)
+
+    merges = compute_bpe_merge(working_vocab=vocab, num_merges=vocab_size - len(special_tokens) - 256)
+
+    final_vocab: dict[int, bytes] = {}
+    token_id = 0
+
+    for token in special_tokens:
+        final_vocab[token_id] = token.encode('utf-8')
+        token_id += 1
+
+    for i in range(256):
+        final_vocab[token_id] = bytes([i])
+        token_id += 1
+
+    for bigram in merges:
+        token_bytes = bigram[0] + bigram[1]
+        final_vocab[token_id] = token_bytes
+        token_id += 1
+
+    return final_vocab, merges
