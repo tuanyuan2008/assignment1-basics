@@ -2,12 +2,14 @@
 
 import os
 from collections import Counter, defaultdict
-from typing import BinaryIO
+from typing import BinaryIO, Iterable
 import regex as re  # type: ignore
 
+PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
 def find_chunk_boundaries(
-    file: BinaryIO, 
-    desired_num_chunks: int, 
+    file: BinaryIO,
+    desired_num_chunks: int,
     split_special_token: bytes
 ) -> list[int]:
     """
@@ -63,32 +65,33 @@ def get_stats(
             pairs[symbols[i],symbols[i+1]] += freq
     return pairs
 
-def merge_vocab(pair, v_in):
-    v_out = {}
-   
+def merge_vocab(
+    pair: tuple[bytes, bytes],
+    v_in: dict[tuple[bytes, ...], int]
+) -> dict[tuple[bytes, ...], int]:
+    """
+    Merge bigram pair in the vocabulary.
+    """
+    v_out: dict[tuple[bytes, ...], int] = {}
+
     for word_tuple in v_in:
-        # Convert tuple to list for easier manipulation
         word_list = list(word_tuple)
-       
-        # Find and merge consecutive pairs
+
         i = 0
         while i < len(word_list) - 1:
             if word_list[i] == pair[0] and word_list[i + 1] == pair[1]:
-                # Merge the pair into a single token by concatenating bytes
                 merged_token = pair[0] + pair[1]
                 word_list = word_list[:i] + [merged_token] + word_list[i + 2:]
-                # Don't increment i, check the same position again
-            else:
-                i += 1
-        
-        # Convert back to tuple and store
+            i += 1
+
         new_word_tuple = tuple(word_list)
         v_out[new_word_tuple] = v_in[word_tuple]
-    
+
     return v_out
 
 def compute_bpe_merge(
-        working_vocab: dict[tuple[bytes, ...], int], num_merges: int
+        working_vocab: dict[tuple[bytes, ...], int],
+        num_merges: int
 ) -> list[tuple[bytes, bytes]]:
     """
     Compute the BPE merges for the given number of merges.
@@ -101,12 +104,38 @@ def compute_bpe_merge(
         working_vocab = merge_vocab(best, working_vocab)
     return merges
 
-def pretokenize(chunk: str) -> Counter[tuple[bytes, ...]]:
-    """Pretokenize a chunk of text and return UTF-8 byte-level token counts."""
-    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+def pretokenize(chunk: str) -> tuple[Counter[tuple[bytes, ...]], list[tuple[bytes, ...]]]:
+    """
+    Pretokenize a chunk of text and return UTF-8 byte-level token counts,
+    as well as the in-order tokens.
+    """
+    tokens = []
     local_vocab: Counter[tuple[bytes, ...]] = Counter()
     matches_iterator = re.finditer(PAT, chunk)
     for match in matches_iterator:
         byte_tuple = tuple(bytes([b]) for b in match.group().encode("utf-8"))
         local_vocab[byte_tuple] += 1
-    return local_vocab
+        tokens.append(byte_tuple)
+    return local_vocab, tokens
+
+def pretokenize_iter(it: Iterable[str]) -> Iterable[tuple[bytes, ...]]:
+    """
+    Pretokenize a chunk of text and yield UTF-8 byte-level tokens in-order.
+    """
+    matches_iterator = re.finditer(PAT, it)
+    for match in matches_iterator:
+        byte_tuple = tuple(bytes([b]) for b in match.group().encode("utf-8"))
+        yield byte_tuple
+
+if __name__ == "__main__":
+    vocab = {
+        tuple(bytes([ord(c)]) for c in "low"): 5,
+        tuple(bytes([ord(c)]) for c in "lower"): 2,
+        tuple(bytes([ord(c)]) for c in "newest"): 6,
+        tuple(bytes([ord(c)]) for c in "widest"): 3
+    }
+    NUM_MERGES = 6
+    compute_bpe_merge(
+        working_vocab=vocab,
+        num_merges=NUM_MERGES
+    )

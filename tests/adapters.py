@@ -12,6 +12,7 @@ import torch
 from torch import Tensor
 import regex as re  # type: ignore
 from cs336_basics.bpe_helper import find_chunk_boundaries, pretokenize, compute_bpe_merge
+from cs336_basics.tokenizer import Tokenizer
 
 def run_linear(
     d_in: int,
@@ -560,7 +561,7 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    return Tokenizer(vocab, merges, special_tokens)
 
 
 def run_train_bpe(
@@ -613,7 +614,7 @@ def run_train_bpe(
 
     results = []
     for chunk in chunks:
-        result = pretokenize(chunk)
+        result, _ = pretokenize(chunk)
         results.append(result)
 
     for local_vocab in results:
