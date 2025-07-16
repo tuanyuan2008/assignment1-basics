@@ -612,13 +612,9 @@ def run_train_bpe(
     # with Pool(processes=num_processes) as pool:
     #     results = pool.map(pretokenize, chunks, chunksize=len(chunks) // num_processes)
 
-    results = []
     for chunk in chunks:
         result, _ = pretokenize(chunk)
-        results.append(result)
-
-    for local_vocab in results:
-        vocab.update(local_vocab)
+        vocab.update(result)
 
     merges = compute_bpe_merge(working_vocab=vocab, num_merges=vocab_size - len(special_tokens) - 256)
 

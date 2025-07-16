@@ -3,6 +3,7 @@ BPE tokenizer that loads a provided vocabulary and list of merges and uses them 
 and decode text to/from token IDs.
 """
 
+import regex as re  # type: ignore
 from typing import Iterable
 from collections.abc import Iterator
 from cs336_basics.bpe_helper import pretokenize, pretokenize_iter
@@ -31,8 +32,19 @@ class Tokenizer():
         """
         Encode an input text into a sequence of token IDs.
         """
-        # TODO: split out special chars, pretokenize text in chunks
-        _, pretokenized_string = pretokenize(text)
+        if self.special_tokens:
+            pattern = "(" + "|".join(re.escape(tok) for tok in self.special_tokens) + ")"
+            parts = re.split(pattern, text)
+        else:
+            parts = [text]
+
+        pretokenized_string = []
+        for part in parts:
+            if part in (self.special_tokens or []):
+                pretokenized_string.append(part.encode("utf-8"))
+            elif part:
+                _, result = pretokenize(part)
+                pretokenized_string.extend(result)
 
         # TODO: encapsulate in more loops? e.g., He, llo may be merged into Hello in a second loop (note this is unfort not the case for GPT2)
         tokenized_string: list[bytes] = []
@@ -45,8 +57,8 @@ class Tokenizer():
                     token_list = token_list[:i] + [merged_token] + token_list[i + 2:]
                 else:
                     i += 1
-            print(f"the token list is {token_list}")
-            print(f"the current tokenized string is {tokenized_string}")
+            # print(f"the token list is {token_list}")
+            # print(f"the current tokenized string is {tokenized_string}")
             tokenized_string.extend(token_list)
 
         encoded_string = []
@@ -54,7 +66,6 @@ class Tokenizer():
             encoded_string.append(self.reverse_vocab[new_token])
 
         return encoded_string
-
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
         """
