@@ -3,9 +3,17 @@
 import os
 from collections import Counter, defaultdict
 from typing import BinaryIO, Iterable
+from enum import Enum
 import regex as re  # type: ignore
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
+class TokenType(Enum):
+    """
+    Label tokens during pretokenization to avoid merging special tokens.
+    """
+    SPECIAL = "special"
+    NORMIE = "normie"
 
 def find_chunk_boundaries(
     file: BinaryIO,
@@ -56,7 +64,7 @@ def find_chunk_boundaries(
     return sorted(set(chunk_boundaries))
 
 def get_stats(
-        working_vocab: dict[tuple[bytes, ...], int]
+    working_vocab: dict[tuple[bytes, ...], int]
 ) -> defaultdict[tuple[bytes, bytes], int]:
     """Map from bigram tuple to count in corpora."""
     pairs: defaultdict[tuple[bytes, bytes], int] = defaultdict(int)
@@ -90,8 +98,8 @@ def merge_vocab(
     return v_out
 
 def compute_bpe_merge(
-        working_vocab: dict[tuple[bytes, ...], int],
-        num_merges: int
+    working_vocab: dict[tuple[bytes, ...], int],
+    num_merges: int
 ) -> list[tuple[bytes, bytes]]:
     """
     Compute the BPE merges for the given number of merges.
@@ -118,14 +126,32 @@ def pretokenize(chunk: str) -> tuple[Counter[tuple[bytes, ...]], list[tuple[byte
         tokens.append(byte_tuple)
     return local_vocab, tokens
 
-def pretokenize_iter(it: Iterable[str]) -> Iterable[tuple[bytes, ...]]:
+def pretokenize_iter(
+    it: Iterable[str], 
+    special_tokens: list[str] | None
+) -> Iterable[tuple[tuple[bytes, ...], TokenType]]:
     """
-    Pretokenize a chunk of text and yield UTF-8 byte-level tokens in-order.
+    Pretokenize a chunk of text and yield UTF-8 byte-level tokens in-order,
+    with special consideration in the handling of special tokens.
     """
-    matches_iterator = re.finditer(PAT, it)
-    for match in matches_iterator:
-        byte_tuple = tuple(bytes([b]) for b in match.group().encode("utf-8"))
-        yield byte_tuple
+    for content in it:
+        if special_tokens:
+            tokens = sorted(special_tokens, reverse=True)
+            special_pattern = "(" + "|".join(re.escape(tok) for tok in tokens) + ")"
+            parts = re.split(special_pattern, content)
+            for part in parts:
+                if part in special_tokens:
+                    yield ((part.encode("utf-8"),), TokenType.SPECIAL)
+                else:
+                    matches_iterator = re.finditer(PAT, part)
+                    for match in matches_iterator:
+                        byte_tuple = tuple(bytes([b]) for b in match.group().encode("utf-8"))
+                        yield (byte_tuple, TokenType.NORMIE)
+        else:
+            matches_iterator = re.finditer(PAT, content)
+            for match in matches_iterator:
+                byte_tuple = tuple(bytes([b]) for b in match.group().encode("utf-8"))
+                yield (byte_tuple, TokenType.NORMIE)
 
 if __name__ == "__main__":
     vocab = {
@@ -134,8 +160,4 @@ if __name__ == "__main__":
         tuple(bytes([ord(c)]) for c in "newest"): 6,
         tuple(bytes([ord(c)]) for c in "widest"): 3
     }
-    NUM_MERGES = 6
-    compute_bpe_merge(
-        working_vocab=vocab,
-        num_merges=NUM_MERGES
-    )
+    print(compute_bpe_merge(working_vocab=vocab, num_merges=6))

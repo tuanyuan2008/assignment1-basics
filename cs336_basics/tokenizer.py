@@ -3,10 +3,11 @@ BPE tokenizer that loads a provided vocabulary and list of merges and uses them 
 and decode text to/from token IDs.
 """
 
-import regex as re  # type: ignore
+import json
 from typing import Iterable
 from collections.abc import Iterator
-from cs336_basics.bpe_helper import pretokenize, pretokenize_iter
+import regex as re  # type: ignore
+from cs336_basics.bpe_helper import pretokenize, pretokenize_iter, TokenType
 
 class Tokenizer():
     """
@@ -17,7 +18,7 @@ class Tokenizer():
         self.reverse_vocab: dict[bytes, int] = {}
         for k, v in self.vocab.items():
             self.reverse_vocab[v] = k
-        self.merges = set(merges)
+        self.merges = merges  # Apply merges to our pretokens in the same order of creation
         self.special_tokens = special_tokens
     
     @classmethod
@@ -26,14 +27,29 @@ class Tokenizer():
         Class method that constructs and return a Tokenizer from a serialized vocabulary and list of merges
         (in the same format that your BPE training code output) and (optionally) a list of special tokens. 
         """
-        pass
+        with open(vocab_filepath, 'r', encoding='utf-8') as f:
+            vocab_json = json.load(f)
+
+        vocab = {}
+        for k, v in vocab_json.items():
+            vocab[v] = k.encode("utf-8")
+
+        merges = []
+        with open(merges_filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.strip():
+                    left, right = line.strip().split()
+                    merges.append((left.encode("utf-8"), right.encode("utf-8")))
+
+        return cls(vocab, merges, special_tokens)
 
     def encode(self, text: str) -> list[int]:
         """
         Encode an input text into a sequence of token IDs.
         """
         if self.special_tokens:
-            pattern = "(" + "|".join(re.escape(tok) for tok in self.special_tokens) + ")"
+            tokens = sorted(self.special_tokens, reverse=True)
+            pattern = "(" + "|".join(re.escape(tok) for tok in tokens) + ")"
             parts = re.split(pattern, text)
         else:
             parts = [text]
@@ -41,24 +57,35 @@ class Tokenizer():
         pretokenized_string = []
         for part in parts:
             if part in (self.special_tokens or []):
-                pretokenized_string.append(part.encode("utf-8"))
+                pretokenized_string.append((part.encode("utf-8"), TokenType.SPECIAL))
             elif part:
                 _, result = pretokenize(part)
-                pretokenized_string.extend(result)
+                pretokenized_string.extend((res, TokenType.NORMIE) for res in result)
 
-        # TODO: encapsulate in more loops? e.g., He, llo may be merged into Hello in a second loop (note this is unfort not the case for GPT2)
+        # Look at each pretoken and apply the BPE merges
         tokenized_string: list[bytes] = []
-        for token in pretokenized_string:
+        for token, token_type in pretokenized_string:
+            if token_type == TokenType.SPECIAL:
+                tokenized_string.append(token)
+                continue
             token_list = list(token)
-            i = 0
-            while i < len(token_list) - 1:
-                if (token_list[i], token_list[i + 1]) in self.merges:
-                    merged_token = token_list[i] + token_list[i + 1]
-                    token_list = token_list[:i] + [merged_token] + token_list[i + 2:]
-                else:
-                    i += 1
-            # print(f"the token list is {token_list}")
-            # print(f"the current tokenized string is {tokenized_string}")
+            while True:
+                merged_this_pass = False
+                # Identify the first applicable merge and use that to transform the pretoken
+                for merge_left, merge_right in self.merges:
+                    i = 0
+                    while i < len(token_list) - 1:
+                        if token_list[i] == merge_left and token_list[i + 1] == merge_right:
+                            merged_token = token_list[i] + token_list[i + 1]
+                            token_list = token_list[:i] + [merged_token] + token_list[i + 2:]
+                            merged_this_pass = True
+                            break
+                        i += 1
+                    # Go back to the list of merges and identify the next applicable merge
+                    if merged_this_pass:
+                        break
+                if not merged_this_pass:
+                    break
             tokenized_string.extend(token_list)
 
         encoded_string = []
@@ -74,20 +101,31 @@ class Tokenizer():
         memory-eﬀicient tokenization of large files that we cannot directly 
         load into memory.
         """
-        _, pretokenized_string = pretokenize_iter(iterable)
-        for token in pretokenized_string:
-            token_list = list(token)
-            i = 0
-            while i < len(token_list) - 1:
-                if (token_list[i], token_list[i + 1]) in self.merges:
-                    merged_token = token_list[i] + token_list[i + 1]
-                    token_list = token_list[:i] + [merged_token] + token_list[i + 2:]
-                else:
-                    yield token_list[i]
-                    i += 1
+        pretokenized_string = pretokenize_iter(iterable, self.special_tokens)
+        for token, token_type in pretokenized_string:
+            if token_type == TokenType.SPECIAL:
+                yield self.reverse_vocab[token[0]]
+                continue
 
-            # for new_token in token_list:
-            #     yield self.reverse_vocab[new_token]
+            token_list = list(token)
+            while True:
+                merged_this_pass = False
+                for merge_left, merge_right in self.merges:
+                    i = 0
+                    while i < len(token_list) - 1:
+                        if token_list[i] == merge_left and token_list[i + 1] == merge_right:
+                            merged_token = token_list[i] + token_list[i + 1]
+                            token_list = token_list[:i] + [merged_token] + token_list[i + 2:]
+                            merged_this_pass = True
+                            break
+                        i += 1
+                    if merged_this_pass:
+                        break
+                if not merged_this_pass:
+                    break
+
+            for final_token in token_list:
+                yield self.reverse_vocab[final_token]
 
     def decode(self, ids: list[int]) -> str:
         """
@@ -96,4 +134,5 @@ class Tokenizer():
         output_text = b""
         for token_id in ids:
             output_text += self.vocab[token_id]
-        return output_text.decode("utf-8", errors='replace')
+        return output_text.decode("utf-8", errors="replace")
+    
