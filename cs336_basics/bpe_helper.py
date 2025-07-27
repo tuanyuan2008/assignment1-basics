@@ -73,6 +73,18 @@ def get_stats(
             pairs[symbols[i],symbols[i+1]] += freq
     return pairs
 
+def get_inverted_index(
+    working_vocab: dict[tuple[bytes, ...], int]
+) -> defaultdict[tuple[bytes, bytes], set]:
+    """
+    Map from bigram tuple to set of words containing it. Efficient.
+    """
+    pairs: defaultdict[tuple[bytes, bytes], set] = defaultdict(set)
+    for symbols in working_vocab.keys():
+        for i in range(len(symbols)-1):
+            pairs[symbols[i],symbols[i+1]].add(symbols)
+    return pairs
+
 def merge_vocab(
     pair: tuple[bytes, bytes],
     v_in: dict[tuple[bytes, ...], int]
@@ -110,6 +122,27 @@ def compute_bpe_merge(
         best = max(pairs.items(), key=lambda item: (item[1], item[0]))[0]
         merges.append(best)
         working_vocab = merge_vocab(best, working_vocab)
+    # pairs = get_stats(working_vocab)
+    # reverse_pairs = get_inverted_index(working_vocab)
+    # for _ in range(num_merges):
+    #     best = max(pairs.items(), key=lambda item: (item[1], item[0]))[0] # TODO: can this also be optimized
+    #     merges.append(best)
+    #     next_vocab = defaultdict(int)
+    #     for next_word in reverse_pairs[best]:
+    #         for i in range(len(next_word) - 1):
+    #             left = next_word[i]
+    #             right = next_word[i + 1]
+    #             if (left, right) in pairs:
+    #                 del pairs[(left, right)]
+    #             if (left, right) != best:
+    #                 reverse_pairs[(left, right)].remove(next_word)
+    #         next_vocab[next_word] = working_vocab[next_word]
+    #         del working_vocab[next_word]
+    #     vocab_after_merge = merge_vocab(best, next_vocab)
+    #     working_vocab.update(vocab_after_merge)
+    #     pairs.update(get_stats(vocab_after_merge))
+    #     reverse_pairs.update(get_inverted_index(vocab_after_merge))
+    #     del reverse_pairs[best]
     return merges
 
 def pretokenize(chunk: str) -> tuple[Counter[tuple[bytes, ...]], list[tuple[bytes, ...]]]:

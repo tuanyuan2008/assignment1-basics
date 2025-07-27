@@ -4,7 +4,7 @@ import os
 from typing import IO, Any, BinaryIO
 from collections import Counter
 from collections.abc import Iterable
-# from multiprocessing import Pool
+from multiprocessing import Pool
 from jaxtyping import Float, Int
 
 import numpy.typing as npt
@@ -607,14 +607,16 @@ def run_train_bpe(
             sub_chunks = re.split(re.escape("|".join(special_tokens)), chunk)
             chunks.extend([sub_chunk for sub_chunk in sub_chunks if sub_chunk.strip()])
 
-    # cpu_count = os.cpu_count()
-    # num_processes = (cpu_count - 1) if cpu_count else 8
-    # with Pool(processes=num_processes) as pool:
-    #     results = pool.map(pretokenize, chunks, chunksize=len(chunks) // num_processes)
-
-    for chunk in chunks:
-        result, _ = pretokenize(chunk)
-        vocab.update(result)
+    if len(chunks) > 1:
+        with Pool(processes=8) as pool:
+            results = list(pool.imap_unordered(pretokenize, chunks, chunksize=4))
+            for result in results:
+                result_counter, _ = result
+                vocab.update(result_counter)
+    else:
+        for chunk in chunks:
+            result_counter, _ = pretokenize(chunk)
+            vocab.update(result_counter)
 
     merges = compute_bpe_merge(working_vocab=vocab, num_merges=vocab_size - len(special_tokens) - 256)
 
