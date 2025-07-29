@@ -4,9 +4,9 @@ import random
 import regex as re # type: ignore
 from .tokenizer import Tokenizer
 
-TS_DATA_FILEPATH = "data/TinyStoriesV2-GPT4-valid.txt"
-TS_VOCAB_FILEPATH = "models/tiny_stories_train_vocab.json"
-TS_MERGES_FILEPATH = "models/tiny_stories_train_merges.txt"
+TS_DATA_FILEPATH = "data/owt_train.txt"
+TS_VOCAB_FILEPATH = "models/owt_train_vocab.json"
+TS_MERGES_FILEPATH = "models/owt_train_merges.txt"
 
 def get_max_len(vocab_filepath: str):
     """

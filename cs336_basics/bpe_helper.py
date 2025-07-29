@@ -4,6 +4,7 @@ import os
 from collections import Counter, defaultdict
 from typing import BinaryIO, Iterable
 from enum import Enum
+from itertools import islice
 import regex as re  # type: ignore
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -145,19 +146,21 @@ def compute_bpe_merge(
     #     del reverse_pairs[best]
     return merges
 
-def pretokenize(chunk: str) -> tuple[Counter[tuple[bytes, ...]], list[tuple[bytes, ...]]]:
+def pretokenize(chunk: str) -> Counter[tuple[bytes, ...]]:
+# def pretokenize(chunk: str) -> tuple[Counter[tuple[bytes, ...]], list[tuple[bytes, ...]]]:
     """
     Pretokenize a chunk of text and return UTF-8 byte-level token counts,
     as well as the in-order tokens.
     """
-    tokens = []
+    # tokens = []
     local_vocab: Counter[tuple[bytes, ...]] = Counter()
     matches_iterator = re.finditer(PAT, chunk)
     for match in matches_iterator:
         byte_tuple = tuple(bytes([b]) for b in match.group().encode("utf-8"))
         local_vocab[byte_tuple] += 1
-        tokens.append(byte_tuple)
-    return local_vocab, tokens
+        # tokens.append(byte_tuple)
+    return local_vocab # memory optimization
+    # return local_vocab, tokens
 
 def pretokenize_iter(
     it: Iterable[str], 
@@ -185,6 +188,15 @@ def pretokenize_iter(
             for match in matches_iterator:
                 byte_tuple = tuple(bytes([b]) for b in match.group().encode("utf-8"))
                 yield (byte_tuple, TokenType.NORMIE)
+
+def batched(iterable, batch_size):
+    """Yield lists of batch_size items from iterable"""
+    it = iter(iterable)
+    while True:
+        batch = list(islice(it, batch_size))
+        if not batch:
+            break
+        yield batch
 
 if __name__ == "__main__":
     vocab = {

@@ -7,9 +7,9 @@ from base64 import b64encode
 import psutil  # type: ignore
 from tests.adapters import run_train_bpe
 
-INPUT_FILEPATH = "data/TinyStoriesV2-GPT4-train.txt"
+INPUT_FILEPATH = "data/owt_train.txt"
 
-OUTPUT_PREFIX = "tiny_stories_train_multiprocess_6"
+OUTPUT_PREFIX = "owt_train_multiprocess"
 
 OUTPUT_VOCAB_FILEPATH = f"models/{OUTPUT_PREFIX}_vocab.json"
 OUTPUT_MERGES_FILEPATH = f"models/{OUTPUT_PREFIX}_merges.txt"

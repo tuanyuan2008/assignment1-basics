@@ -10,8 +10,9 @@ from jaxtyping import Float, Int
 import numpy.typing as npt
 import torch
 from torch import Tensor
+from tqdm import tqdm
 import regex as re  # type: ignore
-from cs336_basics.bpe_helper import find_chunk_boundaries, pretokenize, compute_bpe_merge
+from cs336_basics.bpe_helper import find_chunk_boundaries, pretokenize, compute_bpe_merge, batched
 from cs336_basics.tokenizer import Tokenizer
 
 def run_linear(
@@ -601,21 +602,29 @@ def run_train_bpe(
 
     chunks = []
     with open(input_path, "rb") as f:
+        splitter = re.compile(re.escape("|".join(special_tokens)))
         for start, end in zip(boundaries[:-1], boundaries[1:]):
             f.seek(start)
             chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            sub_chunks = re.split(re.escape("|".join(special_tokens)), chunk)
+            sub_chunks = re.split(splitter, chunk)
             chunks.extend([sub_chunk for sub_chunk in sub_chunks if sub_chunk.strip()])
 
     if len(chunks) > 1:
-        with Pool(processes=8) as pool:
-            results = list(pool.imap_unordered(pretokenize, chunks, chunksize=4))
+        # with Pool(processes=10) as pool:
+        #     results = list(pool.imap_unordered(pretokenize, chunks, chunksize=4))
+        #     for result in results:
+        #         if result is not None:
+        #             vocab.update(result)
+        batch_size = 100
+        for chunk_batch in tqdm(batched(chunks, batch_size), total=len(chunks)//batch_size):
+            with Pool(processes=10) as pool:
+                results = pool.imap_unordered(pretokenize, chunk_batch, chunksize=4)
             for result in results:
-                result_counter, _ = result
-                vocab.update(result_counter)
+                if result is not None:
+                    vocab.update(result)
     else:
         for chunk in chunks:
-            result_counter, _ = pretokenize(chunk)
+            result_counter = pretokenize(chunk)
             vocab.update(result_counter)
 
     merges = compute_bpe_merge(working_vocab=vocab, num_merges=vocab_size - len(special_tokens) - 256)
