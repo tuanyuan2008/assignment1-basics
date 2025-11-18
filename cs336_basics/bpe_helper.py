@@ -4,6 +4,7 @@ import os
 from collections import Counter, defaultdict
 from typing import BinaryIO, Iterable
 from enum import Enum
+from itertools import islice
 import regex as re  # type: ignore
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -73,6 +74,18 @@ def get_stats(
             pairs[symbols[i],symbols[i+1]] += freq
     return pairs
 
+def get_inverted_index(
+    working_vocab: dict[tuple[bytes, ...], int]
+) -> defaultdict[tuple[bytes, bytes], set]:
+    """
+    Map from bigram tuple to set of words containing it. Efficient.
+    """
+    pairs: defaultdict[tuple[bytes, bytes], set] = defaultdict(set)
+    for symbols in working_vocab.keys():
+        for i in range(len(symbols)-1):
+            pairs[symbols[i],symbols[i+1]].add(symbols)
+    return pairs
+
 def merge_vocab(
     pair: tuple[bytes, bytes],
     v_in: dict[tuple[bytes, ...], int]
@@ -110,21 +123,44 @@ def compute_bpe_merge(
         best = max(pairs.items(), key=lambda item: (item[1], item[0]))[0]
         merges.append(best)
         working_vocab = merge_vocab(best, working_vocab)
+    # pairs = get_stats(working_vocab)
+    # reverse_pairs = get_inverted_index(working_vocab)
+    # for _ in range(num_merges):
+    #     best = max(pairs.items(), key=lambda item: (item[1], item[0]))[0] # TODO: can this also be optimized
+    #     merges.append(best)
+    #     next_vocab = defaultdict(int)
+    #     for next_word in reverse_pairs[best]:
+    #         for i in range(len(next_word) - 1):
+    #             left = next_word[i]
+    #             right = next_word[i + 1]
+    #             if (left, right) in pairs:
+    #                 del pairs[(left, right)]
+    #             if (left, right) != best:
+    #                 reverse_pairs[(left, right)].remove(next_word)
+    #         next_vocab[next_word] = working_vocab[next_word]
+    #         del working_vocab[next_word]
+    #     vocab_after_merge = merge_vocab(best, next_vocab)
+    #     working_vocab.update(vocab_after_merge)
+    #     pairs.update(get_stats(vocab_after_merge))
+    #     reverse_pairs.update(get_inverted_index(vocab_after_merge))
+    #     del reverse_pairs[best]
     return merges
 
-def pretokenize(chunk: str) -> tuple[Counter[tuple[bytes, ...]], list[tuple[bytes, ...]]]:
+def pretokenize(chunk: str) -> Counter[tuple[bytes, ...]]:
+# def pretokenize(chunk: str) -> tuple[Counter[tuple[bytes, ...]], list[tuple[bytes, ...]]]:
     """
     Pretokenize a chunk of text and return UTF-8 byte-level token counts,
     as well as the in-order tokens.
     """
-    tokens = []
+    # tokens = []
     local_vocab: Counter[tuple[bytes, ...]] = Counter()
     matches_iterator = re.finditer(PAT, chunk)
     for match in matches_iterator:
         byte_tuple = tuple(bytes([b]) for b in match.group().encode("utf-8"))
         local_vocab[byte_tuple] += 1
-        tokens.append(byte_tuple)
-    return local_vocab, tokens
+        # tokens.append(byte_tuple)
+    return local_vocab # memory optimization
+    # return local_vocab, tokens
 
 def pretokenize_iter(
     it: Iterable[str], 
@@ -152,6 +188,15 @@ def pretokenize_iter(
             for match in matches_iterator:
                 byte_tuple = tuple(bytes([b]) for b in match.group().encode("utf-8"))
                 yield (byte_tuple, TokenType.NORMIE)
+
+def batched(iterable, batch_size):
+    """Yield lists of batch_size items from iterable"""
+    it = iter(iterable)
+    while True:
+        batch = list(islice(it, batch_size))
+        if not batch:
+            break
+        yield batch
 
 if __name__ == "__main__":
     vocab = {

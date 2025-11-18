@@ -6,6 +6,7 @@ and decode text to/from token IDs.
 import json
 from typing import Iterable
 from collections.abc import Iterator
+from base64 import b64decode
 import regex as re  # type: ignore
 from cs336_basics.bpe_helper import pretokenize, pretokenize_iter, TokenType
 
@@ -32,13 +33,18 @@ class Tokenizer():
 
         vocab = {}
         for k, v in vocab_json.items():
-            vocab[v] = k.encode("utf-8")
+            vocab[int(k)] = b64decode(v.encode('utf-8'))
 
         merges = []
         with open(merges_filepath, 'r', encoding='utf-8') as f:
-            for line in f:
+            for line_num, line in enumerate(f, 1):
                 if line.strip():
-                    left, right = line.strip().split()
+                    # Use maxsplit=1 to split into 2 parts, handling first space token
+                    parts = line.rstrip('\n').split(' ', 1)
+                    if len(parts) != 2:
+                        print(f"Error on line {line_num}: '{line.rstrip()}' has {len(parts)} parts")
+                        continue
+                    left, right = parts
                     merges.append((left.encode("utf-8"), right.encode("utf-8")))
 
         return cls(vocab, merges, special_tokens)
@@ -135,4 +141,3 @@ class Tokenizer():
         for token_id in ids:
             output_text += self.vocab[token_id]
         return output_text.decode("utf-8", errors="replace")
-    

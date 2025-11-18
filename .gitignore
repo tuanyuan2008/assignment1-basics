@@ -1,4 +1,14 @@
 # Byte-compiled / optimized / DLL files
+
+# Training input
+data/
+
+# Training outputs
+models/
+logs/
+profiling/
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
